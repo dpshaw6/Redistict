@@ -2,17 +2,35 @@
 # using the US Census Data API.
 #
 # Fields:
-#  - Population (Integer)
-#  - Boundary (Dictionary)
-#    - length (Real - m -some unit(?))
-#    - nodes [List of Nodes]
-#    - edges [List of Edges]
+#  - Population (Dictionary)
+#    - Key (String: '##_###_######'.)
+#      - ## = State #
+#      - ### = County #
+#      - ###### = Tract #
+#    - Value (Integer)
+#  - Geography (Dictionary)
+#    - Key (String: '##_###_######'.)
+#      - ## = State #
+#      - ### = County #
+#      - ###### = Tract #
+#    - Value (Tuple of State, County and Tract numbers)
+#  - Boundary
+#    - Key (String: '##_###_######'.)
+#      - ## = State #
+#      - ### = County #
+#      - ###### = Tract #
+#    - Value (List of x,y 'point' lists)
 #
 # Methods:
 #  - set_population_from_API
+#  - set_population_from_file
 #  - get_population
 #  - set_boundary_from_API
+#  - set_boundary_from_file
 #  - get_population
+DEBUG = True
+
+import os
 import requests
 
 class CensusTract:
@@ -39,6 +57,27 @@ class CensusTract:
             self.geography[geokey] = (state,county,tract)
             
         return
+    
+    def set_population_from_file(self, state_key):
+        self.population = {}
+        filename = "../data/population_"+str(state_key)+".dat"
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                data = line.split(':')
+                if int(data[1]) > 0:
+                    self.population[data[0]] = int(data[1])
+        
+        return
+
+    def write_population_to_file(self, state_key):
+        filename = "../data/population_"+str(state_key)+".dat"
+        with open(filename, 'w') as f:
+            for geokey, pop in self.population.iteritems():
+                line = str(geokey)+":"+str(pop)+"\n"
+                f.write(line)
+        
+        return
             
     def get_population(self):
         return self.population
@@ -46,19 +85,54 @@ class CensusTract:
     def set_boundary_from_API(self, state_key):
         # Pull data from Census API        
         # SQL: where=state%3D09+and+county%3D001+and+tract%3D010101
+        if DEBUG:
+            i_tract = 0
+            num_tracts = len(self.geography)
         for geokey, tract in self.geography.iteritems():
             sql_where = "where=state%3D"+tract[0]+"+and+county%3D"+tract[1]+"+and+tract%3D"+tract[2]
             url = self.GEOGRAPHY_API_STRING1+sql_where+self.GEOGRAPHY_API_STRING2
             response = requests.get(url)
             polygon = response.json()['features'][0]['geometry']['rings'][0]
             self.boundary[geokey] = polygon
+            if DEBUG:
+                i_tract = i_tract + 1
+                print str(i_tract)+" of "+str(num_tracts)+": "+geokey
 
+        return
+    
+    def write_boundary_to_file(self, state_key):
+        filename = "../data/boundary_"+str(state_key)+".dat"
+        with open(filename, 'w') as f:
+            for geokey, polygon in self.boundary.iteritems():
+                line = str(geokey)+":"+str(polygon)+"\n"
+                f.write(line)
+        
+        return
+    
+    def set_boundary_from_file(self, state_key):
+        self.boundary = {}
+        filename = "../data/boundary_"+str(state_key)+".dat"
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                data = line.split(':')
+                self.boundary[data[0]] = data[1]
+        
         return
     
     def get_boundary(self):
         return self.boundary
     
-    def __init__(self, state_key):
-        self.set_population_from_API(state_key)
-        self.set_boundary_from_API(state_key)
+    def __init__(self, state_key, datasource, savedata):
+        if datasource == "FILE":
+            self.set_population_from_file(state_key)
+            self.set_boundary_from_file(state_key)
+        elif datasource == "API":
+            self.set_population_from_API(state_key)
+            if savedata == True:
+                self.write_population_to_file(state_key)
+            self.set_boundary_from_API(state_key)
+            if savedata == True:
+                self.write_boundary_to_file(state_key)
+            
     
